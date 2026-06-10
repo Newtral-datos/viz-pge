@@ -11,7 +11,7 @@
   let sortCol = $state('acu');
   let sortDir = $state(-1);
   let expanded = $state(null);
-  let detYear  = $state('2026');
+  let detYear  = $state(null);
 
   let rows = $derived(
     secciones
@@ -34,6 +34,7 @@
 
   function toggle(codigo) {
     expanded = expanded === codigo ? null : codigo;
+    detYear = null;
   }
 
   function modColor(m) {
@@ -55,8 +56,9 @@
 <div class="sc-page">
   <div class="sc-header">
     <div>
-      <h1 class="sc-title">Secciones ministeriales</h1>
-      <p class="sc-sub">37 secciones presupuestarias · Modificaciones de crédito 2024–2026</p>
+      <h1 class="sc-title">Secciones presupuestarias</h1>
+      <p class="sc-sub">Modificaciones de crédito 2024–2026</p>
+      <p class="sc-sub">Cifras en millones de euros</p>
     </div>
     <span class="sc-note">2026 hasta Abril</span>
   </div>
@@ -94,7 +96,7 @@
               {Math.abs(s.acuMod) > 500 ? (s.acuMod>0?'+':'')+fmtMill(s.acuMod) : '—'}
             </td>
             <td class="td-pct" style="color:{modColor(s.acuMod)}">
-              {s.acuIni > 0 && Math.abs(s.acuMod) > 500 ? '+'+pct(s.acuMod, s.acuIni)+'%' : '—'}
+              {s.acuIni > 0 && Math.abs(s.acuMod) > 500 ? (s.acuMod>=0?'+':'')+pct(s.acuMod, s.acuIni)+'%' : '—'}
             </td>
             <td class="td-exp">{isOpen ? '▲' : '▼'}</td>
           </tr>
@@ -103,6 +105,9 @@
               <td colspan="7">
                 <div class="det-inner">
                   <div class="det-ytabs">
+                    <button class="det-ytab" class:det-ytab-on={detYear===null} onclick={()=>detYear=null}>
+                      General
+                    </button>
                     {#each displayYears as y}
                       <button class="det-ytab" class:det-ytab-on={detYear===y} onclick={()=>detYear=y}>
                         {yearMeta[y].label}
@@ -110,7 +115,37 @@
                     {/each}
                   </div>
 
-                  {#if s.years[detYear]}
+                  {#if detYear === null}
+                    {@const acuIni = displayYears.reduce((sum,y) => sum+(s.years[y]?.credito_inicial||0),0)}
+                    {@const acuMod = displayYears.reduce((sum,y) => sum+(s.years[y]?.mod||0),0)}
+                    {@const acuTot = acuIni + acuMod}
+                    <div class="det-kpis">
+                      <div class="dk"><span class="dk-v">{fmtMill(acuIni)}</span><span class="dk-u">mill.</span><span class="dk-l">Inicial acum.</span></div>
+                      <div class="dk dk-a"><span class="dk-v">{acuMod>=0?'+':''}{fmtMill(acuMod)}</span><span class="dk-u">mill.</span><span class="dk-l">Modificación acum.</span></div>
+                      <div class="dk"><span class="dk-v">{fmtMill(acuTot)}</span><span class="dk-u">mill.</span><span class="dk-l">Total acum.</span></div>
+                      <div class="dk dk-e"><span class="dk-v">{acuMod>=0?'+':''}{pct(acuMod,acuIni)}<small>%</small></span><span class="dk-l">% Modificado</span></div>
+                    </div>
+                    {#if acuIni > 0}
+                      <div class="det-bar">
+                        <div class="det-bar-i" style="flex:{acuIni};min-width:4px" title="Inicial"></div>
+                        {#if acuMod>0}<div class="det-bar-m" style="flex:{acuMod};min-width:4px" title="Modificación"></div>{/if}
+                      </div>
+                    {/if}
+                    <div class="det-year-breakdown">
+                      {#each displayYears as y}
+                        {@const yd = s.years[y]}
+                        {#if yd}
+                          <div class="dyb-row">
+                            <span class="dyb-year">{yearMeta[y].label}</span>
+                            <span class="dyb-mod" style="color:{modColor(yd.mod)}">{yd.mod>=0?'+':''}{fmtMill(yd.mod)} mill.</span>
+                            <div class="dyb-bar-wrap">
+                              <div class="dyb-bar" style="width:{Math.abs(yd.mod)/Math.max(...displayYears.map(yy=>Math.abs(s.years[yy]?.mod||0)),1)*100}%;background:{yd.mod>=0?'#01f3b3':'#dc2626'}"></div>
+                            </div>
+                          </div>
+                        {/if}
+                      {/each}
+                    </div>
+                  {:else if s.years[detYear]}
                     {@const dy = s.years[detYear]}
                     <div class="det-kpis">
                       <div class="dk"><span class="dk-v">{fmtMill(dy.credito_inicial)}</span><span class="dk-u">mill.</span><span class="dk-l">Inicial</span></div>
@@ -135,9 +170,9 @@
                           <thead>
                             <tr>
                               <th class="oth-name">Organismo</th>
-                              <th class="oth-num">Inicial (miles €)</th>
-                              <th class="oth-num">Modificación (miles €)</th>
-                              <th class="oth-num">Total (miles €)</th>
+                              <th class="oth-num">Inicial (mill. €)</th>
+                              <th class="oth-num">Modificación (mill. €)</th>
+                              <th class="oth-num">Total (mill. €)</th>
                               <th class="oth-pct">% mod.</th>
                             </tr>
                           </thead>
@@ -155,11 +190,11 @@
                                     <div class="otd-bar" style="width:{barW}%"></div>
                                   </div>
                                 </td>
-                                <td class="otd-num">{fmtK(o.credito_inicial)}</td>
+                                <td class="otd-num">{fmtMill(o.credito_inicial)}</td>
                                 <td class="otd-num otd-mod" style="color:{modColor(omod)}">
-                                  {omod !== 0 ? (omod>0?'+':'')+fmtK(omod) : '—'}
+                                  {omod !== 0 ? (omod>0?'+':'')+fmtMill(omod) : '—'}
                                 </td>
-                                <td class="otd-num otd-total">{fmtK(o.credito_total)}</td>
+                                <td class="otd-num otd-total">{fmtMill(o.credito_total)}</td>
                                 <td class="otd-pct" style="color:{modColor(omod)}">
                                   {o.credito_inicial > 0 && omod !== 0 ? (omod>=0?'+':'')+pct(omod,o.credito_inicial)+'%' : '—'}
                                 </td>
@@ -293,6 +328,13 @@
   .det-bar-m { background:#01f3b3; }
 
   /* organisms subcategory table */
+  .det-year-breakdown { display:flex;flex-direction:column;gap:.28rem;margin-top:.1rem; }
+  .dyb-row { display:flex;align-items:center;gap:.6rem; }
+  .dyb-year { font-size:.65rem;font-weight:700;color:rgba(73,73,73,.4);width:46px;flex-shrink:0; }
+  .dyb-mod  { font-size:.72rem;font-weight:600;font-variant-numeric:tabular-nums;width:90px;flex-shrink:0;text-align:right; }
+  .dyb-bar-wrap { flex:1;height:5px;background:rgba(73,73,73,.07);border-radius:3px;overflow:hidden; }
+  .dyb-bar  { height:100%;border-radius:3px;transition:width .4s ease; }
+
   .det-org-lbl { font-size:.6rem;text-transform:uppercase;letter-spacing:.09em;color:rgba(73,73,73,.38);margin-bottom:.6rem; }
   .det-nodata  { font-size:.78rem;color:rgba(73,73,73,.35);padding:.5rem 0; }
 

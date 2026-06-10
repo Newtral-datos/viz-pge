@@ -4,6 +4,7 @@
   import Desglose   from './views/Desglose.svelte';
   import Secciones  from './views/Secciones.svelte';
   import Mapa       from './views/Mapa.svelte';
+  import logoNewtral from './assets/logo-newtral.png';
 
   let route = $state('lineas');
 
@@ -22,7 +23,7 @@
       <a href="#desglose"  class:act={route==='desglose'}>Desglose</a>
       <a href="#secciones" class:act={route==='secciones'}>Secciones</a>
       <a href="#mapa"      class:act={route==='mapa'}>Mapa</a>
-      <img src="/logo-newtral.png" alt="Newtral" class="gnav-logo" />
+      <img src={logoNewtral} alt="Newtral" class="gnav-logo" />
     </nav>
   </div>
 </header>
@@ -76,6 +77,6 @@
 
   @media (max-width: 480px) {
     .gnav-inner { padding: .6rem 1rem; gap: 1rem; }
-    .gnav-brand span { display: none; }
+    .gnav-brand { display: none; }
   }
 </style>

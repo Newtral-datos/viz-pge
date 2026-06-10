@@ -8,8 +8,6 @@
   const pct   = (a,b) => b ? Math.round(a/b*100) : 0;
   const sign  = n => n >= 0 ? '+' : '';
 
-  let selectedYear = $state('2026');
-  let compareYear  = $state(null);
 
   // Accumulated totals (2024–2026 only)
   let acuMod  = $derived(displayYears.reduce((s,y) => s + yearTotals[y].credito_total - yearTotals[y].credito_inicial, 0));
@@ -18,13 +16,16 @@
     return { y, label: yearMeta[y].label, mod: m, pct: m / acuMod * 100 };
   }));
 
-  let totales  = $derived(yearTotals[selectedYear]);
-  let MOD      = $derived(totales.credito_total - totales.credito_inicial);
+  let skyYear  = $state(null); // null = General acumulado 2024–2026
   let sections = $derived(
-    secciones
-      .map(s => ({ ...s, ...s.years[selectedYear] }))
-      .filter(s => s.credito_total > 0)
-      .sort((a,b) => b.credito_total - a.credito_total)
+    skyYear
+      ? secciones.map(s => ({ ...s, ...s.years[skyYear] })).filter(s => s.credito_total > 0).sort((a,b) => b.credito_total - a.credito_total)
+      : secciones.map(s => {
+          const credito_inicial = displayYears.reduce((sum,y) => sum+(s.years[y]?.credito_inicial||0),0);
+          const mod             = displayYears.reduce((sum,y) => sum+(s.years[y]?.mod||0),0);
+          const credito_total   = credito_inicial + mod;
+          return { ...s, credito_inicial, credito_total, mod, modPct: credito_inicial>0?mod/credito_inicial:0 };
+        }).filter(s => s.credito_total > 0).sort((a,b) => b.credito_total - a.credito_total)
   );
   // Ranking — propio selector de año (null = acumulado 2024–2026)
   let rankYear = $state(null);
@@ -41,35 +42,32 @@
   let topMods   = $derived([...rankSections].sort((a,b) => b.mod - a.mod).filter(s => s.mod > 0).slice(0, 10));
   let maxTopMod = $derived(topMods[0]?.mod || 1);
 
-  let compareSecs = $derived(
-    compareYear
-      ? secciones.map(s => ({
-          codigo: s.codigo, nombre: s.nombre,
-          modA: Math.round(s.years[selectedYear].mod / 1000),
-          modB: Math.round(s.years[compareYear].mod  / 1000),
-          delta: Math.round((s.years[selectedYear].mod - s.years[compareYear].mod) / 1000),
-        })).sort((a,b) => Math.abs(b.delta) - Math.abs(a.delta)).slice(0,10)
-      : []
-  );
-
   // Skyline — smaller, responsive
-  const BW = 14, GAP = 3, SVG_H = 170, AX = 20, MBH = SVG_H - AX - 8;
-  let sqMax = $derived(Math.sqrt(sections[0]?.credito_total || 1));
+  const BW = 14, GAP = 3, SVG_H = 170, AX = 20, MBH = SVG_H - AX - 8, YAX = 32;
+  let linMax = $derived(sections[0]?.credito_total || 1);
   let bars = $derived(sections.map((s,i) => {
-    const _bh = v => v>0?(Math.sqrt(v)/sqMax)*MBH:0;
-    return { ...s, i, x:i*(BW+GAP),
+    const _bh = v => v>0?Math.max(3,(v/linMax)*MBH):0;
+    return { ...s, i, x:YAX+i*(BW+GAP),
       baseH: _bh(Math.max(0,s.credito_inicial)),
       totalH: _bh(s.credito_total),
       modH:  Math.max(0, _bh(s.credito_total)-_bh(Math.max(0,s.credito_inicial))),
       negH:  Math.max(0, _bh(Math.max(0,s.credito_inicial))-_bh(s.credito_total)),
     };
   }));
-  let SVG_W    = $derived(sections.length*(BW+GAP)-GAP);
+  let SVG_W    = $derived(YAX+sections.length*(BW+GAP)-GAP);
   let econBar  = $derived(bars.find(s=>s.codigo==='27'));
-  let gridLines= $derived([50_000_000,100_000_000].map(v=>{
-    const _bh = x => x>0?(Math.sqrt(x)/sqMax)*MBH:0;
-    return { y: SVG_H-AX-_bh(v), label:`${(v/1e3)|0} M` };
-  }));
+  let gridLines= $derived((() => {
+    const rough = linMax / 3;
+    const mag   = Math.pow(10, Math.floor(Math.log10(rough)));
+    const n     = rough / mag;
+    const nice  = n < 1.5 ? 1 : n < 3.5 ? 2 : n < 7.5 ? 5 : 10;
+    const step  = nice * mag;
+    const _bh   = x => x>0?(x/linMax)*MBH:0;
+    return [step, step*2].filter(v => v < linMax * 0.95).map(v => ({
+      y: SVG_H-AX-_bh(v),
+      label: `${Math.round(v/1e6)} mil M`
+    }));
+  })());
 
   let cityVis  = $state(false);
   let barsIn   = $state(false);
@@ -78,10 +76,9 @@
   let ttX=$state(0), ttY=$state(0);
 
   $effect(() => {
-    selectedYear;
-    cityVis=false; barsIn=false;
+    skyYear;
+    cityVis=false;
     setTimeout(()=>cityVis=true, 150);
-    setTimeout(()=>barsIn=true, 300);
   });
 
   $effect(() => {
@@ -128,8 +125,8 @@
     <div class="ov-hero">
       <div class="ov-stat">
         <span class="ov-pre">+</span>
-        <span class="ov-fig">{fmtMill(acuMod)}</span>
-        <span class="ov-suf"> millones</span>
+        <span class="ov-fig">{fmtMill(acuMod)} </span>
+        <span class="ov-suf">millones</span>
       </div>
       <p class="ov-desc">de euros acumulados en 3 ejercicios presupuestarios</p>
     </div>
@@ -137,7 +134,7 @@
     <!-- stacked bar por año -->
     <div class="ov-segbar">
       {#each acuSegs as seg, i}
-        <div class="ov-seg" style="flex:{seg.pct};--i:{i}" title="{seg.label}: +{fmtMill(seg.mod)} millones"></div>
+        <div class="ov-seg" style="flex:{seg.pct};--p:{(seg.pct/100).toFixed(3)}" title="{seg.label}: +{fmtMill(seg.mod)} millones"></div>
       {/each}
     </div>
     <div class="ov-seglabels">
@@ -146,74 +143,42 @@
       {/each}
     </div>
 
-    <!-- year cards — selectors -->
+    <!-- year cards — static -->
     <div class="ov-years">
       {#each acuSegs as seg}
-        <button class="oy" class:oy-on={selectedYear===seg.y} onclick={()=>selectedYear=seg.y}>
+        <div class="oy">
           <span class="oy-yr">{seg.label}</span>
           <span class="oy-mod">+{fmtMill(seg.mod)}<small> mill.</small></span>
           <span class="oy-share">{seg.pct.toFixed(0)}% del total</span>
-        </button>
+        </div>
       {/each}
     </div>
 
   </div>
-
-  <!-- ── COMPARE ────────────────────────────────────────────── -->
-  <div class="cmp-ctrl">
-    <span class="cmp-ctrl-lbl">Comparar {yearMeta[selectedYear].label} con</span>
-    <div class="ctrl-pills">
-      {#each displayYears.filter(y=>y!==selectedYear) as y}
-        <button class="pill pill-cmp"
-          class:pill-on={compareYear===y}
-          onclick={()=>compareYear=compareYear===y?null:y}>
-          {yearMeta[y].label}
-        </button>
-      {/each}
-      {#if compareYear}
-        <button class="pill-x" onclick={()=>compareYear=null}>✕</button>
-      {/if}
-    </div>
-  </div>
-
-  {#if compareYear}
-    <div class="cmp-block">
-      <div class="cmp-block-head">
-        <span class="cmp-block-title">Diferencia por sección</span>
-        <span class="cmp-block-sub">{yearMeta[selectedYear].label} vs {yearMeta[compareYear].label} · top 10 variaciones</span>
-      </div>
-      <div class="cmp-list">
-        {#each compareSecs as s}
-          {@const col = s.delta > 0 ? '#007A5A' : '#dc2626'}
-          <button class="cmp-row" onclick={()=>selectSection(s)}>
-            <span class="cmp-name">{s.nombre.replace(/\.$/, '')}</span>
-            <span class="cmp-val">{s.modA>=0?'+':''}{sep(s.modA)}</span>
-            <span class="cmp-arr">→</span>
-            <span class="cmp-val">{s.modB>=0?'+':''}{sep(s.modB)}</span>
-            <span class="cmp-delta" style="color:{col}">{s.delta>=0?'▲':'▼'} {sep(Math.abs(s.delta))} mill.</span>
-          </button>
-        {/each}
-      </div>
-    </div>
-  {/if}
 
   <!-- ── SKYLINE ─────────────────────────────────────────────── -->
   <div class="sec-wrap" id="sky">
     <div class="sec-head">
       <div class="sec-head-left">
         <h2 class="sec-title">Sección a sección</h2>
-        <span class="sec-badge">{yearMeta[selectedYear].label}</span>
+        <span class="sec-badge">{skyYear ? yearMeta[skyYear].label : '2024–2026'}</span>
       </div>
-      <p class="sec-desc">Altura = crédito total (escala √) · <strong style="color:#007A5A">verde = modificación</strong> · pulsa una barra para ver el detalle completo</p>
+      <div class="ctrl-pills">
+        <button class="pill" class:pill-on={skyYear===null} onclick={()=>skyYear=null}>General</button>
+        {#each displayYears as y}
+          <button class="pill" class:pill-on={skyYear===y} onclick={()=>skyYear=y}>{yearMeta[y].label}</button>
+        {/each}
+      </div>
     </div>
+    <p class="sec-desc">Altura = crédito total · <strong style="color:#007A5A">verde = modificación</strong> · pulsa una barra para ver el detalle completo</p>
 
     <div class="sky-outer">
       <svg viewBox="0 0 {SVG_W} {SVG_H}" class="sky-svg">
         {#each gridLines as gl}
-          <line x1="0" y1={gl.y} x2={SVG_W} y2={gl.y} stroke="rgba(73,73,73,.08)" stroke-width="1"/>
-          <text x="2" y={gl.y-3} font-size="7" fill="rgba(73,73,73,.32)" font-family="Helvetica Neue,sans-serif">{gl.label}</text>
+          <line x1={YAX} y1={gl.y} x2={SVG_W} y2={gl.y} stroke="rgba(73,73,73,.08)" stroke-width="1"/>
+          <text x={YAX-4} y={gl.y+3} text-anchor="end" font-size="6" fill="rgba(73,73,73,.6)" font-family="Helvetica Neue,sans-serif">{gl.label}</text>
         {/each}
-        <line x1="0" y1={SVG_H-AX} x2={SVG_W} y2={SVG_H-AX} stroke="rgba(73,73,73,.15)" stroke-width="1"/>
+        <line x1={YAX} y1={SVG_H-AX} x2={SVG_W} y2={SVG_H-AX} stroke="rgba(73,73,73,.15)" stroke-width="1"/>
         {#each bars as s}
           <g transform="translate({s.x},{SVG_H-AX})" class="bg" class:bg-vis={cityVis}
             style="--di:{s.i}" onclick={()=>goToSection(s)}
@@ -359,7 +324,7 @@
   }
   .ov-seg {
     border-radius: 2px;
-    background: rgba(1,243,179, calc(0.3 + var(--i) * 0.23));
+    background: rgba(1,243,179, calc(0.25 + var(--p) * 0.75));
     transition: opacity .2s;
   }
   .ov-seglabels {
@@ -384,27 +349,18 @@
     margin-bottom: 0;
   }
   .oy {
-    all: unset;
-    cursor: pointer;
     display: flex;
     flex-direction: column;
     gap: .1rem;
     padding: .4rem .55rem;
     border: 1px solid rgba(73,73,73,.1);
     border-radius: 8px;
-    transition: all .15s;
     background: transparent;
   }
-  .oy:hover { border-color:rgba(1,243,179,.4);background:rgba(1,243,179,.04); }
-  .oy-on    { border-color:#01f3b3;background:rgba(1,243,179,.07); }
   .oy-yr    { font-size:.62rem;font-weight:700;color:rgba(73,73,73,.45);text-transform:uppercase;letter-spacing:.08em; }
-  .oy-on .oy-yr { color:#007A5A; }
   .oy-mod   { font-size:clamp(.78rem,1.5vw,.95rem);font-weight:700;color:#494949;font-variant-numeric:tabular-nums; }
-  .oy-on .oy-mod { color:#007A5A; }
   .oy-mod small { font-size:.55em;font-weight:500;color:rgba(73,73,73,.38); }
-  .oy-on .oy-mod small { color:rgba(0,122,90,.5); }
   .oy-share { font-size:.6rem;color:rgba(73,73,73,.35); }
-  .oy-on .oy-share { color:rgba(0,122,90,.6); }
 
   /* ── compare control ── */
   .cmp-ctrl {
@@ -510,7 +466,7 @@
   .bg:hover .br-m { fill:#5ff7d6; }
   .br { transform-box:fill-box;transform-origin:center bottom;transform:scaleY(0); }
   .bg-vis .br-b { animation:barUp .55s cubic-bezier(.16,1,.3,1) both;animation-delay:calc(var(--di)*12ms); }
-  .bg-vis .br-m { animation:barUp .45s cubic-bezier(.16,1,.3,1) both;animation-delay:calc(var(--di)*12ms+180ms); }
+  .bg-vis .br-m { animation:barUp .45s cubic-bezier(.16,1,.3,1) both;animation-delay:calc(var(--di)*12ms + 180ms); }
   @keyframes barUp { from{transform:scaleY(0)}to{transform:scaleY(1)} }
   .ann { opacity:0;animation:fadeIn .4s 1.1s ease forwards; }
   @keyframes fadeIn { to{opacity:1} }
